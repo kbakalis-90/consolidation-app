@@ -1,0 +1,7 @@
+account_code,account_desc,statement,caption,caption_order,cf_category,wc_class,normal_sign,is_equity,is_cash
+1000,Cash,BS,Cash and cash equivalents,1,,,debit,0,1
+1100,Receivables,BS,Trade receivables,2,,AR,debit,0,0
+2000,Payables,BS,Trade payables,3,,AP,credit,0,0
+3000,Share capital,BS,Share capital,4,,,credit,1,0
+4000,Revenue,PL,Revenue,1,operating,,credit,0,0
+5000,Operating expenses,PL,Operating expenses,2,operating,,debit,0,0

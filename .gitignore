@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# App data (local SQLite db lives here)
+data/local/
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated input templates (run scripts/generate_templates.py)
+data/templates/

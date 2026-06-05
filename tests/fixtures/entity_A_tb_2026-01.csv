@@ -1,0 +1,7 @@
+account_code,account_desc,debit,credit
+1000,Cash,500,0
+1100,Receivables,300,0
+2000,Payables,0,200
+3000,Share capital,0,400
+4000,Revenue,0,600
+5000,Operating expenses,400,0
