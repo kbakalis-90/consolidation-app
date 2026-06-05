@@ -10,6 +10,7 @@ from typing import BinaryIO
 import pandas as pd
 
 from consol.checks import ingestion_checks
+from consol.ingestion.budget_loader import load_budget
 from consol.ingestion.cash_loader import load_cash
 from consol.ingestion.fx_loader import load_fx
 from consol.ingestion.ic_loader import load_ic
@@ -18,6 +19,7 @@ from consol.ingestion.readers import IngestionError
 from consol.ingestion.tb_loader import load_tb
 from consol.models.results import CheckResult
 from consol.persistence import (
+    budget_repo,
     cash_repo,
     config_repo,
     db,
@@ -182,6 +184,26 @@ def ingest_cash(
         period_id = period_repo.get_or_create(conn, year, month)
         rows = cash_repo.replace_for_entity_period(conn, entity_id, period_id, cash)
         _log_upload(conn, "cash", entity_id, period_id, filename, rows, "ok")
+    return IngestResult(rows=rows, checks=[])
+
+
+def ingest_budget(
+    conn: sqlite3.Connection,
+    entity_id: int,
+    year: int,
+    source: bytes | BinaryIO,
+    filename: str | None = None,
+) -> IngestResult:
+    budget = load_budget(source, filename)
+    with db.transaction(conn):
+        months = sorted(budget["month"].unique())
+        period_ids = {m: period_repo.get_or_create(conn, year, int(m)) for m in months}
+        budget = budget.copy()
+        budget["period_id"] = budget["month"].map(period_ids)
+        rows = budget_repo.replace_for_entity_periods(
+            conn, entity_id, list(period_ids.values()), budget
+        )
+        _log_upload(conn, "budget", entity_id, None, filename, rows, "ok")
     return IngestResult(rows=rows, checks=[])
 
 

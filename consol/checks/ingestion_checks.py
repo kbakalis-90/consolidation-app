@@ -95,6 +95,21 @@ def sign_sanity(tb: pd.DataFrame, mapping: pd.DataFrame) -> CheckResult:
     )
 
 
+def budget_completeness(has_budget: bool, period_label: str) -> CheckResult:
+    """Warn when a budget comparison is requested but no budget exists for the period."""
+    return CheckResult(
+        check_id="budget_completeness",
+        description="Budget available for the period",
+        severity=CheckSeverity.WARNING,
+        passed=has_budget,
+        detail=(
+            "Budget present."
+            if has_budget
+            else f"No budget uploaded for {period_label}; budget variance unavailable."
+        ),
+    )
+
+
 def fx_completeness(
     needed_currencies: set[str],
     rates: pd.DataFrame,

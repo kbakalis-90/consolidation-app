@@ -15,8 +15,10 @@ Delivered in phases (see the implementation plan).
 * **Phase 3 (complete):** cash flow statements — indirect (from balance-sheet movements) and
   direct (from uploaded cash transactions), per entity and consolidated, both reconciling to the
   change in cash, with an explicit FX-effect line on the consolidated view.
+* **Phase 4 (complete):** annual budget upload and variance — actual vs prior month, prior year
+  (same month) and budget — across the Balance Sheet and P&L, for entities and the group.
 
-Upcoming: comparatives & variance (Phase 4), KPI dashboard & full check panel (Phase 5).
+Upcoming: KPI dashboard & full check panel (Phase 5).
 
 ## Architecture
 
@@ -66,6 +68,8 @@ Then: **Setup** (group currency + entities) → **Upload** (account mapping, the
   (receivable/payable/income/expense), amount_local`; optional `caption`.
 * **Cash transactions** (per entity/period, direct method): `cf_category
   (operating/investing/financing), direct_line, flow_sign (receipt/payment), amount_local`.
+* **Budget** (per entity, annual, TB-shaped): `account_code, month (1-12), amount_local` (signed);
+  optional `account_desc`.
 
 ## Translation & consolidation (Phase 2)
 

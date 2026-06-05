@@ -25,8 +25,15 @@ entity_by_label = {f"{e.code} — {e.name}": e for e in entities}
 label = st.selectbox("Entity (for mapping & trial balance)", list(entity_by_label.keys()))
 entity = entity_by_label[label]
 
-tab_map, tab_tb, tab_fx, tab_ic, tab_cash = st.tabs(
-    ["Account mapping", "Trial balance", "FX rates", "Intercompany", "Cash transactions"]
+tab_map, tab_tb, tab_fx, tab_ic, tab_cash, tab_budget = st.tabs(
+    [
+        "Account mapping",
+        "Trial balance",
+        "FX rates",
+        "Intercompany",
+        "Cash transactions",
+        "Budget",
+    ]
 )
 
 with tab_map:
@@ -141,6 +148,24 @@ with tab_cash:
                 f"Loaded {res.rows} cash row(s) for {entity.code} "
                 f"{int(cash_year)}-{int(cash_month):02d}."
             )
+        except IngestionError as exc:
+            st.error(str(exc))
+
+with tab_budget:
+    st.caption(
+        "Annual budget for the selected entity, TB-shaped. Columns: account_code, month (1-12), "
+        "amount_local (signed, debit +/credit -); optional account_desc."
+    )
+    budget_year = st.number_input(
+        "Budget year", min_value=2000, max_value=2100, value=dt.date.today().year, key="bud_year"
+    )
+    bfile = st.file_uploader("Budget (.csv/.xlsx)", type=["csv", "xlsx", "xls"], key="budget")
+    if bfile is not None and st.button("Load budget"):
+        try:
+            res = ingestion_service.ingest_budget(
+                conn, entity.entity_id, int(budget_year), bfile.getvalue(), bfile.name
+            )
+            st.success(f"Loaded {res.rows} budget row(s) for {entity.code} {int(budget_year)}.")
         except IngestionError as exc:
             st.error(str(exc))
 
