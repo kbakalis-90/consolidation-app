@@ -10,6 +10,7 @@ from typing import BinaryIO
 import pandas as pd
 
 from consol.checks import ingestion_checks
+from consol.ingestion.cash_loader import load_cash
 from consol.ingestion.fx_loader import load_fx
 from consol.ingestion.ic_loader import load_ic
 from consol.ingestion.mapping_loader import load_mapping
@@ -17,6 +18,7 @@ from consol.ingestion.readers import IngestionError
 from consol.ingestion.tb_loader import load_tb
 from consol.models.results import CheckResult
 from consol.persistence import (
+    cash_repo,
     config_repo,
     db,
     entity_repo,
@@ -164,6 +166,22 @@ def ingest_ic(
         period_id = period_repo.get_or_create(conn, year, month)
         rows = ic_repo.replace_for_period(conn, period_id, ic)
         _log_upload(conn, "ic", None, period_id, filename, rows, "ok")
+    return IngestResult(rows=rows, checks=[])
+
+
+def ingest_cash(
+    conn: sqlite3.Connection,
+    entity_id: int,
+    year: int,
+    month: int,
+    source: bytes | BinaryIO,
+    filename: str | None = None,
+) -> IngestResult:
+    cash = load_cash(source, filename)
+    with db.transaction(conn):
+        period_id = period_repo.get_or_create(conn, year, month)
+        rows = cash_repo.replace_for_entity_period(conn, entity_id, period_id, cash)
+        _log_upload(conn, "cash", entity_id, period_id, filename, rows, "ok")
     return IngestResult(rows=rows, checks=[])
 
 

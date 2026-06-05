@@ -25,8 +25,8 @@ entity_by_label = {f"{e.code} — {e.name}": e for e in entities}
 label = st.selectbox("Entity (for mapping & trial balance)", list(entity_by_label.keys()))
 entity = entity_by_label[label]
 
-tab_map, tab_tb, tab_fx, tab_ic = st.tabs(
-    ["Account mapping", "Trial balance", "FX rates", "Intercompany"]
+tab_map, tab_tb, tab_fx, tab_ic, tab_cash = st.tabs(
+    ["Account mapping", "Trial balance", "FX rates", "Intercompany", "Cash transactions"]
 )
 
 with tab_map:
@@ -109,6 +109,38 @@ with tab_ic:
                 conn, int(ic_year), int(ic_month), icfile.getvalue(), icfile.name
             )
             st.success(f"Loaded {res.rows} IC row(s) for {int(ic_year)}-{int(ic_month):02d}.")
+        except IngestionError as exc:
+            st.error(str(exc))
+
+with tab_cash:
+    st.caption(
+        "Direct-method cash data for the selected entity. Columns: cf_category "
+        "(operating/investing/financing), direct_line, flow_sign (receipt/payment), amount_local."
+    )
+    cols = st.columns(2)
+    cash_year = cols[0].number_input(
+        "Year", min_value=2000, max_value=2100, value=dt.date.today().year, key="cash_year"
+    )
+    cash_month = cols[1].number_input(
+        "Month", min_value=1, max_value=12, value=dt.date.today().month, key="cash_month"
+    )
+    cfile = st.file_uploader(
+        "Cash transactions (.csv/.xlsx)", type=["csv", "xlsx", "xls"], key="cash"
+    )
+    if cfile is not None and st.button("Load cash transactions"):
+        try:
+            res = ingestion_service.ingest_cash(
+                conn,
+                entity.entity_id,
+                int(cash_year),
+                int(cash_month),
+                cfile.getvalue(),
+                cfile.name,
+            )
+            st.success(
+                f"Loaded {res.rows} cash row(s) for {entity.code} "
+                f"{int(cash_year)}-{int(cash_month):02d}."
+            )
         except IngestionError as exc:
             st.error(str(exc))
 

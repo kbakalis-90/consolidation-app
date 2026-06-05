@@ -51,6 +51,28 @@ class CheckResult:
 
 
 @dataclass
+class CashFlowResult:
+    """A cash flow statement (indirect or direct) in one currency.
+
+    ``lines`` has columns ``section, line, amount`` where section is one of the
+    activity headings (Operating/Investing/Financing) and amount is the cash
+    effect (positive = cash in).
+    """
+
+    method: str  # "indirect" | "direct"
+    currency: str
+    lines: pd.DataFrame
+    net_change: float
+    opening_cash: float
+    closing_cash: float
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def section_total(self, section: str) -> float:
+        sel = self.lines.loc[self.lines["section"] == section, "amount"]
+        return float(sel.sum())
+
+
+@dataclass
 class ConsolidationResult:
     """Consolidated statements plus the artefacts that produced them."""
 

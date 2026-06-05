@@ -50,6 +50,30 @@ class StatementsBundle:
         return abs(self.total_assets - self.total_liabilities_equity) < 0.01
 
 
+def caption_attributes(mapping: pd.DataFrame) -> pd.DataFrame:
+    """Per-caption cash-flow attributes derived from a mapping.
+
+    Returns columns: caption, cf_category, wc_class, is_cash. Where a caption
+    spans multiple accounts, the first non-null category/class wins and is_cash
+    is set if any contributing account is cash.
+    """
+    cols = ["caption", "cf_category", "wc_class", "is_cash"]
+    if mapping.empty:
+        return pd.DataFrame(columns=cols)
+    work = mapping.copy()
+    for c in ("cf_category", "wc_class"):
+        if c not in work.columns:
+            work[c] = None
+    if "is_cash" not in work.columns:
+        work["is_cash"] = 0
+    grouped = work.groupby("caption", as_index=False).agg(
+        cf_category=("cf_category", "first"),
+        wc_class=("wc_class", "first"),
+        is_cash=("is_cash", "max"),
+    )
+    return grouped[cols]
+
+
 def _bs_section(row: pd.Series) -> str:
     if str(row["normal_sign"]).lower() == "debit":
         return SECTION_ASSETS

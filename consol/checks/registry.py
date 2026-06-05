@@ -6,11 +6,16 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from consol.checks import consolidation_checks, ingestion_checks, statement_checks
+from consol.checks import (
+    cashflow_checks,
+    consolidation_checks,
+    ingestion_checks,
+    statement_checks,
+)
 from consol.domain.statements import StatementsBundle
 from consol.domain.translation import TranslatedEntity
 from consol.models.enums import CheckSeverity
-from consol.models.results import CheckResult, ConsolidationResult
+from consol.models.results import CashFlowResult, CheckResult, ConsolidationResult
 
 
 @dataclass
@@ -78,6 +83,23 @@ def run_consolidation_checks(
         consolidation_checks.eliminations_net_to_zero(result, tolerance),
         consolidation_checks.ic_reconciliation(result, recon_tolerance),
     ]
+
+
+def run_cashflow_checks(
+    indirect: CashFlowResult | None,
+    direct: CashFlowResult | None,
+    has_prior: bool,
+    tolerance: float,
+) -> list[CheckResult]:
+    results = [cashflow_checks.prior_period_present(has_prior)]
+    if indirect is not None:
+        results.append(cashflow_checks.indirect_ties_to_cash(indirect, tolerance))
+    if direct is not None and has_prior:
+        # Reconciling the direct method needs an opening cash balance (prior period).
+        results.append(cashflow_checks.direct_ties_to_cash(direct, tolerance))
+    if indirect is not None and direct is not None:
+        results.append(cashflow_checks.indirect_equals_direct(indirect, direct, tolerance))
+    return results
 
 
 def summarize(results: list[CheckResult]) -> CheckSummary:

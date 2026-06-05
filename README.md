@@ -12,9 +12,11 @@ Delivered in phases (see the implementation plan).
   account mapping) with validation, single-entity Balance Sheet & P&L in local currency, checks.
 * **Phase 2 (complete):** FX-rate upload, current-rate translation (IAS 21) with CTA,
   multi-entity consolidation, intercompany elimination and two-sided reconciliation.
+* **Phase 3 (complete):** cash flow statements — indirect (from balance-sheet movements) and
+  direct (from uploaded cash transactions), per entity and consolidated, both reconciling to the
+  change in cash, with an explicit FX-effect line on the consolidated view.
 
-Upcoming: cash flow statements (Phase 3), comparatives & variance (Phase 4), KPI dashboard &
-full check panel (Phase 5).
+Upcoming: comparatives & variance (Phase 4), KPI dashboard & full check panel (Phase 5).
 
 ## Architecture
 
@@ -62,6 +64,8 @@ Then: **Setup** (group currency + entities) → **Upload** (account mapping, the
   a rate of 1.0. Direction is set by config (`group_per_local` by default).
 * **Intercompany** (per period): `entity_code, counterparty_code, ic_type
   (receivable/payable/income/expense), amount_local`; optional `caption`.
+* **Cash transactions** (per entity/period, direct method): `cf_category
+  (operating/investing/financing), direct_line, flow_sign (receipt/payment), amount_local`.
 
 ## Translation & consolidation (Phase 2)
 
