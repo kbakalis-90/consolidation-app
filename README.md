@@ -17,8 +17,11 @@ Delivered in phases (see the implementation plan).
   change in cash, with an explicit FX-effect line on the consolidated view.
 * **Phase 4 (complete):** annual budget upload and variance — actual vs prior month, prior year
   (same month) and budget — across the Balance Sheet and P&L, for entities and the group.
+* **Phase 5 (complete):** KPI dashboard (profitability, financial position, liquidity, cash flow)
+  for entities and the group, and a one-stop accuracy-check panel aggregating every check for a
+  period.
 
-Upcoming: KPI dashboard & full check panel (Phase 5).
+All five planned phases are delivered.
 
 ## Architecture
 
@@ -52,8 +55,9 @@ python -m scripts.generate_templates   # optional: blank input templates
 streamlit run app.py
 ```
 
-Then: **Setup** (group currency + entities) → **Upload** (account mapping, then trial balance) →
-**Entity Statements** (Balance Sheet & P&L with checks).
+Pages: **Setup** (group currency + entities) → **Upload** (mapping, trial balance, FX,
+intercompany, cash transactions, budget) → **Entity Statements** → **Consolidation** →
+**Cash Flow** → **Comparatives** → **Dashboard** → **Checks**.
 
 ## Input files
 

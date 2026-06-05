@@ -13,6 +13,8 @@ pages = [
     st.Page("ui/pages/4_Consolidation.py", title="Consolidation", icon="🌍"),
     st.Page("ui/pages/5_Cash_Flow.py", title="Cash Flow", icon="💧"),
     st.Page("ui/pages/6_Comparatives.py", title="Comparatives", icon="📈"),
+    st.Page("ui/pages/7_Dashboard.py", title="Dashboard", icon="📋"),
+    st.Page("ui/pages/8_Checks.py", title="Checks", icon="✅"),
 ]
 
 st.navigation(pages).run()
