@@ -38,3 +38,26 @@ def test_sign_sanity_flags_wrong_direction(sample_tb, sample_mapping):
 def test_bs_balances_check(sample_tb, sample_mapping):
     bundle = build_statements(sample_tb, sample_mapping, "EUR")
     assert statement_checks.bs_balances(bundle, 0.01).passed
+
+
+def test_fx_completeness_pass():
+    rates = pd.DataFrame(
+        {"currency": ["USD", "EUR"], "closing_rate": [1.25, 1.0], "average_rate": [1.1, 1.0]}
+    )
+    res = ingestion_checks.fx_completeness({"USD", "EUR"}, rates, "EUR")
+    assert res.passed
+
+
+def test_fx_completeness_missing_currency():
+    rates = pd.DataFrame({"currency": ["EUR"], "closing_rate": [1.0], "average_rate": [1.0]})
+    res = ingestion_checks.fx_completeness({"USD", "EUR"}, rates, "EUR")
+    assert not res.passed
+    assert "USD" in res.detail
+
+
+def test_fx_completeness_group_rate_not_one():
+    rates = pd.DataFrame(
+        {"currency": ["USD", "EUR"], "closing_rate": [1.25, 1.2], "average_rate": [1.1, 1.2]}
+    )
+    res = ingestion_checks.fx_completeness({"USD", "EUR"}, rates, "EUR")
+    assert not res.passed

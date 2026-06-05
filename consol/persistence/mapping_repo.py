@@ -20,11 +20,26 @@ _COLUMNS = [
 ]
 
 
+_DEFAULTS = {
+    "account_desc": "",
+    "caption_order": 9999,
+    "cf_category": None,
+    "wc_class": None,
+    "is_equity": 0,
+    "is_cash": 0,
+}
+
+
 def replace_for_entity(conn: sqlite3.Connection, entity_id: int, mapping: pd.DataFrame) -> int:
     """Replace the entire mapping for one entity. Returns rows written.
 
-    ``mapping`` must contain the columns in :data:`_COLUMNS`.
+    Required columns: account_code, statement, caption, normal_sign. Optional
+    columns are filled with defaults if absent.
     """
+    mapping = mapping.copy()
+    for col, default in _DEFAULTS.items():
+        if col not in mapping.columns:
+            mapping[col] = default
     conn.execute("DELETE FROM account_mapping WHERE entity_id = ?", (entity_id,))
     records = mapping[_COLUMNS].to_dict("records")
     conn.executemany(

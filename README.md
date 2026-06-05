@@ -6,12 +6,15 @@ Built with Python, Streamlit and pandas; data persisted in a local SQLite databa
 
 ## Status
 
-Delivered in phases (see the implementation plan). **Phase 1 is complete:** project foundation,
-SQLite data model, file ingestion (trial balance + account mapping) with validation, and
-single-entity Balance Sheet & P&L in local currency with built-in accuracy checks.
+Delivered in phases (see the implementation plan).
 
-Upcoming: FX translation + consolidation + CTA (Phase 2), cash flow statements (Phase 3),
-comparatives & variance (Phase 4), KPI dashboard & full check panel (Phase 5).
+* **Phase 1 (complete):** project foundation, SQLite data model, ingestion (trial balance +
+  account mapping) with validation, single-entity Balance Sheet & P&L in local currency, checks.
+* **Phase 2 (complete):** FX-rate upload, current-rate translation (IAS 21) with CTA,
+  multi-entity consolidation, intercompany elimination and two-sided reconciliation.
+
+Upcoming: cash flow statements (Phase 3), comparatives & variance (Phase 4), KPI dashboard &
+full check panel (Phase 5).
 
 ## Architecture
 
@@ -48,13 +51,26 @@ streamlit run app.py
 Then: **Setup** (group currency + entities) → **Upload** (account mapping, then trial balance) →
 **Entity Statements** (Balance Sheet & P&L with checks).
 
-## Input files (Phase 1)
+## Input files
 
 * **Account mapping** (per entity): `account_code, statement (BS/PL), caption, normal_sign
   (debit/credit)` required; `account_desc, caption_order, cf_category, wc_class, is_equity,
   is_cash` optional.
 * **Trial balance** (per entity/period): `account_code` plus either `debit`/`credit` columns or a
   signed `amount` column; optional `account_desc`.
+* **FX rates** (per period): `currency, closing_rate, average_rate`. The group currency must have
+  a rate of 1.0. Direction is set by config (`group_per_local` by default).
+* **Intercompany** (per period): `entity_code, counterparty_code, ic_type
+  (receivable/payable/income/expense), amount_local`; optional `caption`.
+
+## Translation & consolidation (Phase 2)
+
+Entities are translated to the group currency using the current-rate method: balance-sheet items
+at the closing rate, P&L at the average rate, non-result equity at a historical rate (the prior
+period's closing rate as an opening proxy). The residual is booked to a **Cumulative Translation
+Adjustment (CTA)** in equity. On consolidation, intercompany receivables/payables and
+income/expense are eliminated by their matched amount (keeping the balance sheet balanced), and a
+two-sided reconciliation flags any unmatched difference.
 
 ## Tests
 

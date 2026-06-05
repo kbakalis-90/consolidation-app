@@ -93,3 +93,36 @@ def sign_sanity(tb: pd.DataFrame, mapping: pd.DataFrame) -> CheckResult:
         ),
         rows=wrong[["account_code", "normal_sign", "amount_local"]] if not passed else None,
     )
+
+
+def fx_completeness(
+    needed_currencies: set[str],
+    rates: pd.DataFrame,
+    group_currency: str,
+    tolerance: float = 0.01,
+) -> CheckResult:
+    """Every entity currency must have a rate; the group currency must be 1.0."""
+    available = set(rates["currency"]) if not rates.empty else set()
+    missing = sorted((needed_currencies - {group_currency}) - available)
+
+    group_ok = True
+    group_detail = ""
+    if group_currency in available:
+        grp = rates.loc[rates["currency"] == group_currency, ["closing_rate", "average_rate"]]
+        if not ((grp.sub(1.0).abs() <= tolerance).all().all()):
+            group_ok = False
+            group_detail = f" Group currency {group_currency} rate must be 1.0."
+
+    passed = not missing and group_ok
+    detail = "All required FX rates present."
+    if missing:
+        detail = f"Missing FX rate(s) for: {', '.join(missing)}."
+    detail += group_detail
+    return CheckResult(
+        check_id="fx_completeness",
+        description="FX rates present for all entity currencies",
+        severity=CheckSeverity.ERROR,
+        passed=passed,
+        detail=detail,
+        rows=pd.DataFrame({"missing_currency": missing}) if missing else None,
+    )

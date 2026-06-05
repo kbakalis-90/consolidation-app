@@ -6,10 +6,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from consol.checks import ingestion_checks, statement_checks
+from consol.checks import consolidation_checks, ingestion_checks, statement_checks
 from consol.domain.statements import StatementsBundle
+from consol.domain.translation import TranslatedEntity
 from consol.models.enums import CheckSeverity
-from consol.models.results import CheckResult
+from consol.models.results import CheckResult, ConsolidationResult
 
 
 @dataclass
@@ -63,6 +64,20 @@ def run_ingestion_checks(
 
 def run_statement_checks(bundle: StatementsBundle, tolerance: float) -> list[CheckResult]:
     return [statement_checks.bs_balances(bundle, tolerance)]
+
+
+def run_consolidation_checks(
+    entities: list[TranslatedEntity],
+    result: ConsolidationResult,
+    tolerance: float,
+    recon_tolerance: float,
+) -> list[CheckResult]:
+    return [
+        consolidation_checks.entity_translated_balances(entities, tolerance),
+        consolidation_checks.consolidated_bs_balances(result, tolerance),
+        consolidation_checks.eliminations_net_to_zero(result, tolerance),
+        consolidation_checks.ic_reconciliation(result, recon_tolerance),
+    ]
 
 
 def summarize(results: list[CheckResult]) -> CheckSummary:

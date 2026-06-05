@@ -10,10 +10,22 @@ from typing import BinaryIO
 import pandas as pd
 
 from consol.checks import ingestion_checks
+from consol.ingestion.fx_loader import load_fx
+from consol.ingestion.ic_loader import load_ic
 from consol.ingestion.mapping_loader import load_mapping
+from consol.ingestion.readers import IngestionError
 from consol.ingestion.tb_loader import load_tb
 from consol.models.results import CheckResult
-from consol.persistence import config_repo, db, entity_repo, mapping_repo, period_repo, tb_repo
+from consol.persistence import (
+    config_repo,
+    db,
+    entity_repo,
+    fx_repo,
+    ic_repo,
+    mapping_repo,
+    period_repo,
+    tb_repo,
+)
 
 
 @dataclass
@@ -105,6 +117,54 @@ def ingest_tb(
         rows = tb_repo.replace_for_entity_period(conn, entity_id, period_id, tb)
         _log_upload(conn, "tb", entity_id, period_id, filename, rows, "ok")
     return IngestResult(rows=rows, checks=checks)
+
+
+def ingest_fx(
+    conn: sqlite3.Connection,
+    year: int,
+    month: int,
+    source: bytes | BinaryIO,
+    filename: str | None = None,
+) -> IngestResult:
+    rates = load_fx(source, filename)
+    with db.transaction(conn):
+        period_id = period_repo.get_or_create(conn, year, month)
+        rows = fx_repo.replace_for_period(conn, period_id, rates)
+        _log_upload(conn, "fx", None, period_id, filename, rows, "ok")
+    return IngestResult(rows=rows, checks=[])
+
+
+def ingest_ic(
+    conn: sqlite3.Connection,
+    year: int,
+    month: int,
+    source: bytes | BinaryIO,
+    filename: str | None = None,
+) -> IngestResult:
+    ic = load_ic(source, filename)
+
+    # Resolve entity codes to ids; unknown codes are a hard error.
+    codes = set(ic["entity_code"]) | set(ic["counterparty_code"])
+    id_by_code = {
+        c: (
+            entity_repo.get_by_code(conn, c).entity_id if entity_repo.get_by_code(conn, c) else None
+        )
+        for c in codes
+    }
+    unknown = sorted(c for c, eid in id_by_code.items() if eid is None)
+    if unknown:
+        raise IngestionError(
+            f"IC file references unknown entity code(s): {', '.join(unknown)}. "
+            "Add them on the Setup page first."
+        )
+    ic["entity_id"] = ic["entity_code"].map(id_by_code)
+    ic["counterparty_id"] = ic["counterparty_code"].map(id_by_code)
+
+    with db.transaction(conn):
+        period_id = period_repo.get_or_create(conn, year, month)
+        rows = ic_repo.replace_for_period(conn, period_id, ic)
+        _log_upload(conn, "ic", None, period_id, filename, rows, "ok")
+    return IngestResult(rows=rows, checks=[])
 
 
 def upload_history(conn: sqlite3.Connection) -> pd.DataFrame:

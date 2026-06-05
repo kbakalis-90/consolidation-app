@@ -22,10 +22,12 @@ if not entities:
     st.stop()
 
 entity_by_label = {f"{e.code} — {e.name}": e for e in entities}
-label = st.selectbox("Entity", list(entity_by_label.keys()))
+label = st.selectbox("Entity (for mapping & trial balance)", list(entity_by_label.keys()))
 entity = entity_by_label[label]
 
-tab_map, tab_tb = st.tabs(["Account mapping", "Trial balance"])
+tab_map, tab_tb, tab_fx, tab_ic = st.tabs(
+    ["Account mapping", "Trial balance", "FX rates", "Intercompany"]
+)
 
 with tab_map:
     st.caption(
@@ -62,6 +64,51 @@ with tab_tb:
                 st.success(
                     f"Loaded {res.rows} TB rows for {entity.code} {int(year)}-{int(month):02d}."
                 )
+        except IngestionError as exc:
+            st.error(str(exc))
+
+with tab_fx:
+    st.caption("Columns: currency, closing_rate, average_rate. One row per currency.")
+    st.caption(
+        "Rates are interpreted per the configured FX direction; the group currency "
+        "must have a rate of 1.0."
+    )
+    cols = st.columns(2)
+    fx_year = cols[0].number_input(
+        "Year", min_value=2000, max_value=2100, value=dt.date.today().year, key="fx_year"
+    )
+    fx_month = cols[1].number_input(
+        "Month", min_value=1, max_value=12, value=dt.date.today().month, key="fx_month"
+    )
+    ffile = st.file_uploader("FX rates (.csv/.xlsx)", type=["csv", "xlsx", "xls"], key="fx")
+    if ffile is not None and st.button("Load FX rates"):
+        try:
+            res = ingestion_service.ingest_fx(
+                conn, int(fx_year), int(fx_month), ffile.getvalue(), ffile.name
+            )
+            st.success(f"Loaded {res.rows} FX rate row(s) for {int(fx_year)}-{int(fx_month):02d}.")
+        except IngestionError as exc:
+            st.error(str(exc))
+
+with tab_ic:
+    st.caption(
+        "Columns: entity_code, counterparty_code, ic_type "
+        "(receivable/payable/income/expense), amount_local; optional caption."
+    )
+    cols = st.columns(2)
+    ic_year = cols[0].number_input(
+        "Year", min_value=2000, max_value=2100, value=dt.date.today().year, key="ic_year"
+    )
+    ic_month = cols[1].number_input(
+        "Month", min_value=1, max_value=12, value=dt.date.today().month, key="ic_month"
+    )
+    icfile = st.file_uploader("Intercompany (.csv/.xlsx)", type=["csv", "xlsx", "xls"], key="ic")
+    if icfile is not None and st.button("Load intercompany balances"):
+        try:
+            res = ingestion_service.ingest_ic(
+                conn, int(ic_year), int(ic_month), icfile.getvalue(), icfile.name
+            )
+            st.success(f"Loaded {res.rows} IC row(s) for {int(ic_year)}-{int(ic_month):02d}.")
         except IngestionError as exc:
             st.error(str(exc))
 
