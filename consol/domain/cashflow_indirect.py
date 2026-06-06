@@ -22,6 +22,10 @@ from consol.models.results import CashFlowResult, StatementResult
 SECTION_OPERATING = "Operating activities"
 SECTION_INVESTING = "Investing activities"
 SECTION_FINANCING = "Financing activities"
+# Emitted only on the *consolidated* path (see cashflow_service), where translated
+# entity flows are summed and the residual FX impact is booked as its own line.
+# build_indirect_cashflow operates on LOCAL bundles and never produces it, but
+# _order_sections must still rank it for the consolidated statement.
 SECTION_FX = "Effect of exchange rate changes on cash"
 
 _WC_LABELS = {
@@ -58,12 +62,35 @@ def _classify(row: pd.Series) -> tuple[str, str] | None:
     return SECTION_OPERATING, f"Change in {caption}"
 
 
+class CtaInIndirectCashflowError(ValueError):
+    """Raised when a translated (CTA-bearing) bundle is fed to the LOCAL builder.
+
+    ``build_indirect_cashflow`` relies on the identity ΔAssets = ΔLiabilities +
+    ΔEquity to guarantee the non-cash movements sum to the cash movement. That
+    identity only holds for LOCAL bundles. A translated bundle carries a CTA plug
+    in equity that has no cash counterpart, so reconciliation would silently
+    fail. The consolidated FX effect is handled separately (see cashflow_service).
+    """
+
+
+def _assert_no_cta(bs: StatementResult, label: str) -> None:
+    lines = bs.lines
+    if not lines.empty and (lines["caption"] == CAPTION_CTA).any():
+        raise CtaInIndirectCashflowError(
+            f"{label} balance sheet carries a '{CAPTION_CTA}' line; the indirect "
+            "cash flow builder only accepts LOCAL (untranslated) bundles. Translate "
+            "the resulting cash flows and add the FX effect separately instead."
+        )
+
+
 def build_indirect_cashflow(
     current_bs: StatementResult,
     prior_bs: StatementResult,
     caption_attrs: pd.DataFrame,
     currency: str,
 ) -> CashFlowResult:
+    _assert_no_cta(current_bs, "Current")
+    _assert_no_cta(prior_bs, "Prior")
     cur = current_bs.lines[["section", "caption", "amount"]].rename(columns={"amount": "cur"})
     pri = prior_bs.lines[["section", "caption", "amount"]].rename(columns={"amount": "pri"})
 

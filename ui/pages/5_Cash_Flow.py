@@ -5,14 +5,11 @@ from __future__ import annotations
 import streamlit as st
 
 from consol.persistence import entity_repo, period_repo
-from consol.services.cashflow_service import (
-    CashflowError,
-    build_consolidated_cashflow,
-    build_entity_cashflow,
-)
+from consol.services.cashflow_service import CashflowError
+from ui import cache
 from ui.bootstrap import get_conn
 from ui.components.cashflow_table import render_cashflow, render_comparison
-from ui.components.check_badge import render_check_summary
+from ui.components.check_badge import render_blocking_banner, render_check_summary
 
 st.title("💧 Cash Flow")
 
@@ -33,13 +30,16 @@ if scope == "Single entity":
     elabel = st.selectbox("Entity", list(entity_by_label.keys()))
     entity = entity_by_label[elabel]
     try:
-        report = build_entity_cashflow(conn, entity.entity_id, period.year, period.month)
+        report = cache.build_entity_cashflow(
+            entity.entity_id, period.year, period.month, cache.data_version()
+        )
     except CashflowError as exc:
         st.error(str(exc))
         st.stop()
 
     st.caption(f"{report.entity.name} — {report.period_label} — {report.currency}")
     render_check_summary(report.checks)
+    render_blocking_banner(report.checks)
 
     if not report.has_prior:
         st.info("No prior period found — the indirect method needs an opening balance sheet.")
@@ -60,7 +60,7 @@ if scope == "Single entity":
             st.info("No cash-transaction data uploaded for the direct method.")
 else:
     try:
-        report = build_consolidated_cashflow(conn, period.year, period.month)
+        report = cache.build_consolidated_cashflow(period.year, period.month, cache.data_version())
     except CashflowError as exc:
         st.error(str(exc))
         st.stop()
@@ -68,6 +68,7 @@ else:
     if report.skipped:
         st.warning(f"Excluded (missing current or prior TB): {', '.join(report.skipped)}.")
     render_check_summary(report.checks)
+    render_blocking_banner(report.checks)
     if report.indirect is not None:
         render_cashflow(report.indirect, "Consolidated indirect method")
     else:

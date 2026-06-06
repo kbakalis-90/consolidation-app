@@ -93,7 +93,11 @@ with tab_fx:
             res = ingestion_service.ingest_fx(
                 conn, int(fx_year), int(fx_month), ffile.getvalue(), ffile.name
             )
-            st.success(f"Loaded {res.rows} FX rate row(s) for {int(fx_year)}-{int(fx_month):02d}.")
+            render_check_summary(summarize(res.checks))
+            if res.rows:
+                st.success(
+                    f"Loaded {res.rows} FX rate row(s) for {int(fx_year)}-{int(fx_month):02d}."
+                )
         except IngestionError as exc:
             st.error(str(exc))
 
@@ -115,7 +119,9 @@ with tab_ic:
             res = ingestion_service.ingest_ic(
                 conn, int(ic_year), int(ic_month), icfile.getvalue(), icfile.name
             )
-            st.success(f"Loaded {res.rows} IC row(s) for {int(ic_year)}-{int(ic_month):02d}.")
+            render_check_summary(summarize(res.checks))
+            if res.rows:
+                st.success(f"Loaded {res.rows} IC row(s) for {int(ic_year)}-{int(ic_month):02d}.")
         except IngestionError as exc:
             st.error(str(exc))
 

@@ -23,7 +23,10 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     target = str(db_path) if db_path is not None else str(SETTINGS.db_path)
     if target != ":memory:":
         Path(target).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target)
+    # check_same_thread=False: the UI caches a single connection (see ui.bootstrap.get_conn)
+    # that Streamlit may touch from different worker threads. The app is single-user and
+    # serializes access per rerun, so sharing one connection across threads is safe here.
+    conn = sqlite3.connect(target, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

@@ -131,11 +131,25 @@ def ingest_fx(
     filename: str | None = None,
 ) -> IngestResult:
     rates = load_fx(source, filename)
+    group_currency = config_repo.group_currency(conn)
+    needed_currencies = {e.local_currency for e in entity_repo.list_all(conn)}
+
+    checks = [
+        ingestion_checks.fx_group_rate(rates, group_currency),
+        ingestion_checks.fx_currencies_present(needed_currencies, rates, group_currency),
+    ]
+    # A wrong group rate mis-translates every entity, so block; a missing entity
+    # currency is only a warning (not all entities may be uploaded yet).
+    if any(c.is_blocking for c in checks):
+        _log_upload(conn, "fx", None, None, filename, len(rates), "rejected")
+        conn.commit()
+        return IngestResult(rows=0, checks=checks)
+
     with db.transaction(conn):
         period_id = period_repo.get_or_create(conn, year, month)
         rows = fx_repo.replace_for_period(conn, period_id, rates)
         _log_upload(conn, "fx", None, period_id, filename, rows, "ok")
-    return IngestResult(rows=rows, checks=[])
+    return IngestResult(rows=rows, checks=checks)
 
 
 def ingest_ic(
@@ -164,11 +178,25 @@ def ingest_ic(
     ic["entity_id"] = ic["entity_code"].map(id_by_code)
     ic["counterparty_id"] = ic["counterparty_code"].map(id_by_code)
 
+    # Duplicate lines on the composite key would double-count / collide with the
+    # DB UNIQUE index, so block before persisting.
+    checks = [ingestion_checks.ic_no_duplicates(ic)]
+    if any(c.is_blocking for c in checks):
+        _log_upload(conn, "ic", None, None, filename, len(ic), "rejected")
+        conn.commit()
+        return IngestResult(rows=0, checks=checks)
+
     with db.transaction(conn):
         period_id = period_repo.get_or_create(conn, year, month)
-        rows = ic_repo.replace_for_period(conn, period_id, ic)
+        try:
+            rows = ic_repo.replace_for_period(conn, period_id, ic)
+        except sqlite3.IntegrityError as exc:
+            raise IngestionError(
+                "IC file has duplicate intercompany lines on "
+                "(entity, counterparty, type, caption)."
+            ) from exc
         _log_upload(conn, "ic", None, period_id, filename, rows, "ok")
-    return IngestResult(rows=rows, checks=[])
+    return IngestResult(rows=rows, checks=checks)
 
 
 def ingest_cash(
@@ -182,7 +210,12 @@ def ingest_cash(
     cash = load_cash(source, filename)
     with db.transaction(conn):
         period_id = period_repo.get_or_create(conn, year, month)
-        rows = cash_repo.replace_for_entity_period(conn, entity_id, period_id, cash)
+        try:
+            rows = cash_repo.replace_for_entity_period(conn, entity_id, period_id, cash)
+        except sqlite3.IntegrityError as exc:
+            raise IngestionError(
+                "Cash file has duplicate (cf_category, direct_line) line(s)."
+            ) from exc
         _log_upload(conn, "cash", entity_id, period_id, filename, rows, "ok")
     return IngestResult(rows=rows, checks=[])
 
@@ -200,9 +233,14 @@ def ingest_budget(
         period_ids = {m: period_repo.get_or_create(conn, year, int(m)) for m in months}
         budget = budget.copy()
         budget["period_id"] = budget["month"].map(period_ids)
-        rows = budget_repo.replace_for_entity_periods(
-            conn, entity_id, list(period_ids.values()), budget
-        )
+        try:
+            rows = budget_repo.replace_for_entity_periods(
+                conn, entity_id, list(period_ids.values()), budget
+            )
+        except sqlite3.IntegrityError as exc:
+            raise IngestionError(
+                "Budget file has duplicate (month, account_code) line(s)."
+            ) from exc
         _log_upload(conn, "budget", entity_id, None, filename, rows, "ok")
     return IngestResult(rows=rows, checks=[])
 

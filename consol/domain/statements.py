@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from consol.domain.sign_conventions import (
@@ -74,10 +75,19 @@ def caption_attributes(mapping: pd.DataFrame) -> pd.DataFrame:
     return grouped[cols]
 
 
-def _bs_section(row: pd.Series) -> str:
-    if str(row["normal_sign"]).lower() == "debit":
-        return SECTION_ASSETS
-    return SECTION_EQUITY if int(row.get("is_equity", 0)) == 1 else SECTION_LIABILITIES
+def _bs_sections(bs: pd.DataFrame) -> np.ndarray:
+    """Vectorized section assignment: debit -> Assets; else Equity if flagged, else Liabilities.
+
+    Equivalent to the former per-row ``_bs_section`` helper but evaluated over the
+    whole frame at once.
+    """
+    is_debit = bs["normal_sign"].astype(str).str.lower() == "debit"
+    if "is_equity" in bs.columns:
+        is_equity = pd.to_numeric(bs["is_equity"], errors="coerce").fillna(0).astype(int) == 1
+    else:
+        is_equity = pd.Series(False, index=bs.index)
+    non_asset = np.where(is_equity, SECTION_EQUITY, SECTION_LIABILITIES)
+    return np.where(is_debit, SECTION_ASSETS, non_asset)
 
 
 def build_statements(tb: pd.DataFrame, mapping: pd.DataFrame, currency: str) -> StatementsBundle:
@@ -138,7 +148,7 @@ def _build_bs(
     if not bs.empty:
         bs = bs.copy()
         bs["amount"] = natural_amount(bs["amount_local"], bs["normal_sign"])
-        bs["section"] = bs.apply(_bs_section, axis=1)
+        bs["section"] = _bs_sections(bs)
         grouped = bs.groupby(["section", "caption", "caption_order"], as_index=False)[
             "amount"
         ].sum()

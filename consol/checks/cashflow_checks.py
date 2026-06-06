@@ -24,6 +24,51 @@ def indirect_ties_to_cash(cf: CashFlowResult, tolerance: float) -> CheckResult:
     )
 
 
+def consolidated_indirect_ties_to_cash(cf: CashFlowResult, tolerance: float) -> CheckResult:
+    """Validate the consolidated indirect statement without relying on the FX plug.
+
+    On the consolidated path the FX-effect line is constructed as
+    ``movement - translated_net`` so ``net_change`` equals the cash movement by
+    construction; the plain :func:`indirect_ties_to_cash` therefore can never fail.
+
+    This check instead anchors to two *independent* quantities recorded on the
+    result meta by the service:
+
+    * ``section_sum`` -- the operating/investing/financing section totals summed
+      back up, which must equal ``translated_net`` (no flow lost or double-counted
+      before the plug is added); and
+    * ``expected_fx_effect`` -- the FX-on-cash expectation derived purely from the
+      closing/opening-vs-average rate spreads on each entity's cash, which must
+      equal the booked ``fx_effect`` plug.
+
+    A genuine asymmetry (a dropped section, or an FX plug that is absorbing a real
+    reconciliation gap rather than rate movement) makes one of these diverge.
+    """
+    translated_net = float(cf.meta.get("translated_net", 0.0))
+    section_sum = float(cf.meta.get("section_sum", 0.0))
+    fx_effect = float(cf.meta.get("fx_effect", 0.0))
+    expected_fx = float(cf.meta.get("expected_fx_effect", 0.0))
+
+    section_diff = section_sum - translated_net
+    fx_diff = fx_effect - expected_fx
+    passed = abs(section_diff) <= tolerance and abs(fx_diff) <= tolerance
+    return CheckResult(
+        check_id="consolidated_indirect_ties_to_cash",
+        description="Consolidated indirect cash flow ties to its sections and FX spread",
+        severity=CheckSeverity.ERROR,
+        passed=passed,
+        detail=(
+            "Consolidated indirect cash flow reconciles (sections and FX spread)."
+            if passed
+            else (
+                f"Section sum {section_sum:,.2f} vs translated net {translated_net:,.2f} "
+                f"(diff {section_diff:,.2f}); FX plug {fx_effect:,.2f} vs expected "
+                f"{expected_fx:,.2f} (diff {fx_diff:,.2f})."
+            )
+        ),
+    )
+
+
 def direct_ties_to_cash(cf: CashFlowResult, tolerance: float) -> CheckResult:
     movement = cf.closing_cash - cf.opening_cash
     diff = cf.net_change - movement

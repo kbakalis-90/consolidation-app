@@ -36,7 +36,27 @@ def to_numeric(series: pd.Series, column: str, file_label: str) -> pd.Series:
     return coerced.fillna(0.0).astype(float)
 
 
-def find_duplicates(df: pd.DataFrame, key: str) -> list[str]:
-    """Return values of ``key`` that appear more than once."""
-    counts = df[key].astype(str).str.strip().value_counts()
-    return counts[counts > 1].index.tolist()
+def find_duplicates(df: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
+    """Return the rows whose ``keys`` combination appears more than once.
+
+    ``keys`` may be a single column name or a list of columns (a composite key).
+    The returned frame keeps every offending row, ordered by the key columns, so
+    callers can surface exactly which lines collide.
+    """
+    cols = [keys] if isinstance(keys, str) else list(keys)
+    dup_mask = df.duplicated(subset=cols, keep=False)
+    if not dup_mask.any():
+        return df.iloc[0:0][cols]
+    return df.loc[dup_mask, cols].sort_values(cols).reset_index(drop=True)
+
+
+def normalize_caption(series: pd.Series) -> pd.Series:
+    """Collapse blank/NaN/whitespace-only captions to a single canonical ``""``.
+
+    ``astype(str)`` would turn a NaN cell into the literal string ``"nan"`` while
+    a whitespace-only cell strips to ``""`` — two different keys for what is the
+    same blank caption. Normalizing here lets identical lines collide on the
+    composite IC key (and the DB UNIQUE index).
+    """
+    cleaned = series.where(series.notna(), "").astype(str).str.strip()
+    return cleaned.replace({"nan": "", "none": "", "None": ""})

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from consol.config import FX_DIRECTION_GROUP_PER_LOCAL
@@ -51,15 +52,6 @@ class TranslatedEntity:
         return abs(self.total_assets - self.total_liabilities_equity) < 0.01
 
 
-def _bs_rate(
-    section: str, caption: str, closing: float, average: float, historical: float
-) -> float:
-    if section == SECTION_EQUITY:
-        return average if caption == CAPTION_CURRENT_YEAR_RESULT else historical
-    # Assets and liabilities translate at the closing rate.
-    return closing
-
-
 def translate_bundle(
     bundle: StatementsBundle,
     entity: Entity,
@@ -76,14 +68,14 @@ def translate_bundle(
     bs = bundle.balance_sheet.lines.copy()
     if bs.empty:
         bs = pd.DataFrame(columns=["section", "caption", "caption_order", "amount"])
-    bs["rate"] = bs.apply(
-        lambda r: _bs_rate(r["section"], r["caption"], closing_rate, average_rate, historical),
-        axis=1,
-    )
-    bs["amount"] = [
-        convert(a, rate, direction) for a, rate in zip(bs["amount"], bs["rate"], strict=True)
-    ]
-    bs = bs.drop(columns="rate")
+    # Per-line FX rate (vectorized): equity translates at the average rate for the
+    # current-year result and at the historical rate otherwise; assets and
+    # liabilities translate at the closing rate.
+    is_equity = bs["section"] == SECTION_EQUITY
+    is_result = bs["caption"] == CAPTION_CURRENT_YEAR_RESULT
+    equity_rate = np.where(is_result, average_rate, historical)
+    rate = np.where(is_equity, equity_rate, closing_rate)
+    bs["amount"] = [convert(a, r, direction) for a, r in zip(bs["amount"], rate, strict=True)]
 
     total_assets = float(bs.loc[bs["section"] == SECTION_ASSETS, "amount"].sum())
     total_le_pre = float(

@@ -34,14 +34,22 @@ def _pair_key(a: str, b: str) -> str:
 
 def _build_eliminations(
     ic: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return (elimination_deltas, reconciliation) given IC rows with amount_group.
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
+    """Return (elimination_deltas, reconciliation, matched) given IC rows.
 
     ``elimination_deltas`` columns: statement, section, caption, amount (signed
     deltas to apply to the consolidated presentation lines).
+
+    ``matched`` carries the *independent* matched intercompany totals
+    (``matched_bs``/``matched_pl``) that drove the eliminations. They are derived
+    from the matched (min-of-two-sides) IC amounts rather than from the deltas, so
+    checks can validate the deltas against a figure they did not themselves
+    produce.
     """
     delta_rows: list[dict] = []
     recon_rows: list[dict] = []
+    matched_bs_total = 0.0
+    matched_pl_total = 0.0
 
     for pair, grp in ic.groupby("pair"):
         recv = grp[grp["ic_type"] == "receivable"]
@@ -56,6 +64,8 @@ def _build_eliminations(
 
         matched_bs = min(recv_total, pay_total)
         matched_pl = min(inc_total, exp_total)
+        matched_bs_total += matched_bs
+        matched_pl_total += matched_pl
 
         # Balance-sheet eliminations: reduce receivable assets and payable
         # liabilities by the matched amount, distributed across their captions.
@@ -127,7 +137,8 @@ def _build_eliminations(
             "pnl_difference",
         ],
     )
-    return deltas, recon
+    matched = {"matched_bs": matched_bs_total, "matched_pl": matched_pl_total}
+    return deltas, recon, matched
 
 
 def _aggregate_bs(entities: list[TranslatedEntity], deltas: pd.DataFrame) -> pd.DataFrame:
@@ -183,9 +194,10 @@ def consolidate(
         ic = ic.copy()
         ic["amount_group"] = ic.apply(lambda r: _ic_amount_group(r, fx_rates, direction), axis=1)
         ic["pair"] = ic.apply(lambda r: _pair_key(r["entity_code"], r["counterparty_code"]), axis=1)
-        deltas, recon = _build_eliminations(ic)
+        deltas, recon, matched = _build_eliminations(ic)
     else:
         deltas = pd.DataFrame(columns=["statement", "section", "caption", "amount"])
+        matched = {"matched_bs": 0.0, "matched_pl": 0.0}
         recon = pd.DataFrame(
             columns=[
                 "pair",
@@ -228,5 +240,10 @@ def consolidate(
         eliminations=deltas,
         ic_reconciliation=recon,
         cta_rollforward=cta_rollforward,
-        meta={"total_assets": total_assets, "total_liabilities_equity": total_le},
+        meta={
+            "total_assets": total_assets,
+            "total_liabilities_equity": total_le,
+            "matched_bs": matched["matched_bs"],
+            "matched_pl": matched["matched_pl"],
+        },
     )
