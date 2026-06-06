@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from consol.checks import registry
+from consol.checks import cashflow_checks, ingestion_checks, registry
 from consol.domain.cashflow_direct import build_direct_cashflow
 from consol.domain.cashflow_indirect import SECTION_FX, build_indirect_cashflow
 from consol.domain.statements import StatementsBundle, build_statements, caption_attributes
@@ -141,7 +141,22 @@ def build_consolidated_cashflow(
             [e.code for e in entity_repo.list_all(conn, active_only=True)],
         )
 
-    for entity in entity_repo.list_all(conn, active_only=True):
+    # Independent expectation of the FX-on-cash line, accumulated per entity from
+    # the rate spreads (closing/opening vs average). It is computed without ever
+    # touching ``translated_net`` so the consolidated tie-out check can validate the
+    # FX plug against a figure it did not itself produce (see cashflow_checks).
+    expected_fx = 0.0
+
+    # Run fx_completeness on the consolidated cashflow path so a missing rate (which
+    # silently falls back to (1.0, 1.0)) surfaces as a blocking error, mirroring
+    # consolidation_service. fx_completeness lives in ingestion_checks (imported, not
+    # edited).
+    entities = entity_repo.list_all(conn, active_only=True)
+    needed = {e.local_currency for e in entities}
+    rates_df = fx_repo.load_for_period(conn, period.period_id)
+    fx_check = ingestion_checks.fx_completeness(needed, rates_df, group_ccy, tol)
+
+    for entity in entities:
         current = _bundle_for(conn, entity, period.period_id)
         prior_bundle = _bundle_for(conn, entity, prior.period_id)
         if current is None or prior_bundle is None:
@@ -161,8 +176,17 @@ def build_consolidated_cashflow(
         if not lines.empty:
             lines["amount"] = [convert(a, average_rate, direction) for a in lines["amount"]]
             frames.append(lines)
-        opening_group += convert(local_cf.opening_cash, opening_rate, direction)
-        closing_group += convert(local_cf.closing_cash, closing_rate, direction)
+        opening_entity = convert(local_cf.opening_cash, opening_rate, direction)
+        closing_entity = convert(local_cf.closing_cash, closing_rate, direction)
+        opening_group += opening_entity
+        closing_group += closing_entity
+        # Per-entity FX on cash = group cash movement minus the average-rate
+        # translation of the local cash movement (which is what the section flows
+        # translate to, by the local reconciliation identity).
+        movement_avg = convert(
+            local_cf.closing_cash - local_cf.opening_cash, average_rate, direction
+        )
+        expected_fx += (closing_entity - opening_entity) - movement_avg
 
     if not frames and not skipped:
         return ConsolidatedCashflowReport(
@@ -180,6 +204,9 @@ def build_consolidated_cashflow(
         else combined
     )
     translated_net = float(agg["amount"].sum()) if not agg.empty else 0.0
+    # Independent section-sum cross-check (computed from the per-section operating/
+    # investing/financing totals, not from translated_net itself).
+    section_sum = float(agg.groupby("section")["amount"].sum().sum()) if not agg.empty else 0.0
 
     movement = closing_group - opening_group
     fx_effect = movement - translated_net
@@ -195,9 +222,19 @@ def build_consolidated_cashflow(
         net_change=translated_net + fx_effect,
         opening_cash=opening_group,
         closing_cash=closing_group,
-        meta={"fx_effect": fx_effect},
+        meta={
+            "fx_effect": fx_effect,
+            "translated_net": translated_net,
+            "section_sum": section_sum,
+            "expected_fx_effect": expected_fx,
+        },
     )
     results = registry.run_cashflow_checks(indirect, None, True, tol)
+    # The plain indirect_ties_to_cash is a tautology for the consolidated statement
+    # (the FX line is a plug). Add the independent FX cross-check and surface any
+    # missing-rate fallbacks as blocking errors.
+    results.append(cashflow_checks.consolidated_indirect_ties_to_cash(indirect, tol))
+    results.append(fx_check)
     return ConsolidatedCashflowReport(
         period.label, group_ccy, indirect, registry.summarize(results), skipped
     )

@@ -48,7 +48,16 @@ def consolidated_bs_balances(result: ConsolidationResult, tolerance: float) -> C
 
 
 def eliminations_net_to_zero(result: ConsolidationResult, tolerance: float) -> CheckResult:
-    """Asset-side BS eliminations must equal liability-side; same for P&L."""
+    """Eliminations must remove exactly the matched intercompany amount on each side.
+
+    The asset-side and liability-side BS deltas net to zero by construction, so
+    comparing the two against each other can never fail. Instead we anchor both
+    sides to the *independent* matched intercompany total recorded on the result
+    (``matched_bs``/``matched_pl``, the min-of-two-sides figure that drove the
+    eliminations). If a side were under- or over-eliminated, it would no longer
+    equal that figure and the check fails even though the two delta sides still
+    happen to net to zero.
+    """
     elim = result.eliminations
     if elim.empty:
         return CheckResult(
@@ -58,13 +67,24 @@ def eliminations_net_to_zero(result: ConsolidationResult, tolerance: float) -> C
             True,
             "No eliminations.",
         )
+    matched_bs = float(result.meta.get("matched_bs", 0.0))
+    matched_pl = float(result.meta.get("matched_pl", 0.0))
+
     bs = elim[elim["statement"] == StatementType.BS.value]
-    asset_side = bs.loc[bs["section"] == SECTION_ASSETS, "amount"].sum()
-    liab_side = bs.loc[bs["section"] == SECTION_LIABILITIES, "amount"].sum()
+    asset_side = float(bs.loc[bs["section"] == SECTION_ASSETS, "amount"].sum())
+    liab_side = float(bs.loc[bs["section"] == SECTION_LIABILITIES, "amount"].sum())
     pl = elim[elim["statement"] == StatementType.PL.value]
-    pl_net = pl["amount"].sum()  # revenue (neg) + expense add-back (pos) should cancel
-    bs_ok = abs(asset_side - liab_side) <= tolerance
-    pl_ok = abs(pl_net) <= tolerance
+    # Income deltas are negative (remove revenue); expense deltas positive (add back).
+    pl_income_side = float(pl.loc[pl["amount"] < 0, "amount"].sum())
+    pl_expense_side = float(pl.loc[pl["amount"] > 0, "amount"].sum())
+
+    # Each side must remove exactly the matched amount (asset/income reduced,
+    # liability reduced, expense added back).
+    bs_ok = abs(asset_side + matched_bs) <= tolerance and abs(liab_side + matched_bs) <= tolerance
+    pl_ok = (
+        abs(pl_income_side + matched_pl) <= tolerance
+        and abs(pl_expense_side - matched_pl) <= tolerance
+    )
     passed = bs_ok and pl_ok
     return CheckResult(
         check_id="eliminations_net_to_zero",
@@ -74,8 +94,12 @@ def eliminations_net_to_zero(result: ConsolidationResult, tolerance: float) -> C
         detail=(
             "Eliminations balanced."
             if passed
-            else f"BS asset-side {asset_side:,.2f} vs liability-side {liab_side:,.2f}; "
-            f"P&L net {pl_net:,.2f}."
+            else (
+                f"Matched BS {matched_bs:,.2f}: asset-side {asset_side:,.2f}, "
+                f"liability-side {liab_side:,.2f}. "
+                f"Matched P&L {matched_pl:,.2f}: income-side {pl_income_side:,.2f}, "
+                f"expense-side {pl_expense_side:,.2f}."
+            )
         ),
     )
 

@@ -5,9 +5,10 @@ from __future__ import annotations
 import streamlit as st
 
 from consol.persistence import period_repo
-from consol.services.consolidation_service import ConsolidationError, build_consolidation
+from consol.services.consolidation_service import ConsolidationError
+from ui import cache
 from ui.bootstrap import get_conn
-from ui.components.check_badge import render_check_summary
+from ui.components.check_badge import render_blocking_banner, render_check_summary
 from ui.components.statement_table import render_balance_sheet, render_pl
 
 st.title("🌍 Consolidation")
@@ -23,7 +24,7 @@ plabel = st.selectbox("Period", list(period_by_label.keys()), index=len(periods)
 period = period_by_label[plabel]
 
 try:
-    report = build_consolidation(conn, period.year, period.month)
+    report = cache.build_consolidation(period.year, period.month, cache.data_version())
 except ConsolidationError as exc:
     st.error(str(exc))
     st.stop()
@@ -33,6 +34,7 @@ if report.missing_tb:
     st.warning(f"No trial balance for: {', '.join(report.missing_tb)} (excluded from group).")
 
 render_check_summary(report.checks)
+render_blocking_banner(report.checks)
 
 if report.result is None:
     st.info("Nothing to consolidate yet — upload entity trial balances and FX rates.")

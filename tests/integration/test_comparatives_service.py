@@ -2,7 +2,10 @@ import pandas as pd
 
 from consol.persistence import budget_repo, entity_repo, mapping_repo, period_repo, tb_repo
 from consol.services import ingestion_service
-from consol.services.comparatives_service import build_entity_comparatives
+from consol.services.comparatives_service import (
+    build_consolidated_comparatives,
+    build_entity_comparatives,
+)
 
 _MAPPING = {
     "account_code": ["1000", "3000", "4000", "5000"],
@@ -54,3 +57,26 @@ def test_entity_comparatives_prior_month_and_budget(conn):
     assert rev["Prior month"] == 40.0
     assert rev["Budget"] == 110.0
     assert rev["Budget Δ"] == -10.0
+
+
+def test_consolidated_comparatives_prior_month(conn):
+    # Single group-currency (EUR) entity needs no FX upload; build the group
+    # prior-month comparison and confirm the consolidated variance ties out.
+    eid = entity_repo.upsert(conn, "E1", "Entity One", "EUR")
+    mapping_repo.replace_for_entity(conn, eid, pd.DataFrame(_MAPPING))
+    p0 = period_repo.get_or_create(conn, 2025, 12)
+    p1 = period_repo.get_or_create(conn, 2026, 1)
+    tb_repo.replace_for_entity_period(conn, eid, p0, _tb(100, 80, 40, 20))
+    tb_repo.replace_for_entity_period(conn, eid, p1, _tb(140, 80, 100, 40))
+    conn.commit()
+
+    report = build_consolidated_comparatives(conn, 2026, 1)
+    assert report.title == "Consolidated group"
+    assert report.currency == "EUR"
+    assert report.available["Prior month"] is True
+    assert report.available["Prior year"] is False
+
+    rev = report.pl_variance[report.pl_variance["caption"] == "Revenue"].iloc[0]
+    assert rev["Actual"] == 100.0
+    assert rev["Prior month"] == 40.0
+    assert rev["Prior month Δ"] == 60.0

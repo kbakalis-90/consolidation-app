@@ -7,9 +7,10 @@ import streamlit as st
 
 from consol.domain.kpis import FMT_CURRENCY, FMT_PERCENT, FMT_RATIO
 from consol.persistence import entity_repo, period_repo
-from consol.services.dashboard_service import DashboardError, build_dashboard
+from consol.services.dashboard_service import DashboardError
+from ui import cache
 from ui.bootstrap import get_conn
-from ui.components.check_badge import render_check_summary
+from ui.components.check_badge import render_blocking_banner, render_check_summary
 
 st.title("📋 Dashboard")
 
@@ -36,7 +37,9 @@ if scope == "entity":
     entity_id = entity_by_label[elabel].entity_id
 
 try:
-    report = build_dashboard(conn, scope, period.year, period.month, entity_id)
+    report = cache.build_dashboard(
+        scope, period.year, period.month, entity_id, cache.data_version()
+    )
 except DashboardError as exc:
     st.error(str(exc))
     st.stop()
@@ -56,6 +59,7 @@ def _fmt(value: float, fmt: str, currency: str) -> str:
 
 st.caption(f"{report.title} — {report.period_label} — {report.currency}")
 render_check_summary(report.checks)
+render_blocking_banner(report.checks)
 
 if report.revenue_growth is not None and not np.isnan(report.revenue_growth):
     st.metric("Revenue growth vs prior month", f"{report.revenue_growth:,.1f}%")

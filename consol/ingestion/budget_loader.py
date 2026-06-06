@@ -9,7 +9,7 @@ import pandas as pd
 
 from consol.ingestion.readers import IngestionError, read_table
 from consol.ingestion.schemas import FileSchema
-from consol.ingestion.validators import require_columns, to_numeric
+from consol.ingestion.validators import find_duplicates, require_columns, to_numeric
 
 BUDGET_SCHEMA = FileSchema(
     name="budget",
@@ -38,4 +38,12 @@ def load_budget(source: str | Path | BinaryIO | bytes, filename: str | None = No
     out = out[out["account_code"] != ""].reset_index(drop=True)
     if out.empty:
         raise IngestionError("Budget file has no usable rows.")
+
+    # A within-file duplicate on (month, account_code) would hit the DB UNIQUE
+    # constraint (entity_id, period_id, account_code); surface it friendlily.
+    dups = find_duplicates(out, ["month", "account_code"])
+    if not dups.empty:
+        pairs = dups.drop_duplicates().head(5)
+        listing = ", ".join(f"{int(r.month):02d}/{r.account_code}" for r in pairs.itertuples())
+        raise IngestionError(f"Budget file has duplicate (month, account_code) line(s): {listing}.")
     return out

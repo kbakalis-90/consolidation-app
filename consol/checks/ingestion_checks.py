@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from consol.ingestion.validators import find_duplicates
 from consol.models.enums import CheckSeverity
 from consol.models.results import CheckResult
 
@@ -116,7 +117,12 @@ def fx_completeness(
     group_currency: str,
     tolerance: float = 0.01,
 ) -> CheckResult:
-    """Every entity currency must have a rate; the group currency must be 1.0."""
+    """Every entity currency must have a rate; the group currency must be 1.0.
+
+    Used at consolidation time, where both concerns are blocking. The upload
+    path uses the finer-grained :func:`fx_group_rate` (blocking) and
+    :func:`fx_currencies_present` (warning) instead.
+    """
     available = set(rates["currency"]) if not rates.empty else set()
     missing = sorted((needed_currencies - {group_currency}) - available)
 
@@ -140,4 +146,84 @@ def fx_completeness(
         passed=passed,
         detail=detail,
         rows=pd.DataFrame({"missing_currency": missing}) if missing else None,
+    )
+
+
+def fx_group_rate(
+    rates: pd.DataFrame,
+    group_currency: str,
+    tolerance: float = 0.01,
+) -> CheckResult:
+    """The group currency, when present, must have a rate of ~1.0 (blocking).
+
+    A wrong group rate silently mis-translates every entity, so at upload time
+    this is an ERROR that rejects the file. Absence of the group currency is not
+    blocking here (it is not strictly required to be in the file).
+    """
+    available = set(rates["currency"]) if not rates.empty else set()
+    group_ok = True
+    if group_currency in available:
+        grp = rates.loc[rates["currency"] == group_currency, ["closing_rate", "average_rate"]]
+        group_ok = bool((grp.sub(1.0).abs() <= tolerance).all().all())
+    return CheckResult(
+        check_id="fx_group_rate",
+        description="Group currency rate is 1.0",
+        severity=CheckSeverity.ERROR,
+        passed=group_ok,
+        detail=(
+            f"Group currency {group_currency} rate is 1.0."
+            if group_ok
+            else f"Group currency {group_currency} closing/average rate must be 1.0."
+        ),
+    )
+
+
+def fx_currencies_present(
+    needed_currencies: set[str],
+    rates: pd.DataFrame,
+    group_currency: str,
+) -> CheckResult:
+    """Warn (do not block) when an entity currency has no rate in the file.
+
+    At upload time not every entity may have been set up yet, so a missing rate
+    is informational rather than a hard failure.
+    """
+    available = set(rates["currency"]) if not rates.empty else set()
+    missing = sorted((needed_currencies - {group_currency}) - available)
+    passed = not missing
+    return CheckResult(
+        check_id="fx_currencies_present",
+        description="FX rates present for all entity currencies",
+        severity=CheckSeverity.WARNING,
+        passed=passed,
+        detail=(
+            "All entity-currency FX rates present."
+            if passed
+            else f"Missing FX rate(s) for: {', '.join(missing)}."
+        ),
+        rows=pd.DataFrame({"missing_currency": missing}) if missing else None,
+    )
+
+
+def ic_no_duplicates(ic: pd.DataFrame) -> CheckResult:
+    """No duplicate IC line on the composite key (blocking).
+
+    Duplicate lines on ``(entity_code, counterparty_code, ic_type, caption)``
+    would either double-count or collide with the DB UNIQUE index, so this is a
+    blocking ERROR.
+    """
+    keys = ["entity_code", "counterparty_code", "ic_type", "caption"]
+    dups = find_duplicates(ic, keys)
+    passed = dups.empty
+    return CheckResult(
+        check_id="ic_no_duplicates",
+        description="No duplicate intercompany lines",
+        severity=CheckSeverity.ERROR,
+        passed=passed,
+        detail=(
+            "No duplicate IC lines."
+            if passed
+            else f"{len(dups)} duplicate IC line(s) on (entity, counterparty, type, caption)."
+        ),
+        rows=None if passed else dups,
     )

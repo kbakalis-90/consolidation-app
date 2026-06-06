@@ -5,9 +5,10 @@ from __future__ import annotations
 import streamlit as st
 
 from consol.persistence import entity_repo, period_repo
-from consol.services.reporting_service import ReportingError, build_entity_report
+from consol.services.reporting_service import ReportingError
+from ui import cache
 from ui.bootstrap import get_conn
-from ui.components.check_badge import render_check_summary
+from ui.components.check_badge import render_blocking_banner, render_check_summary
 from ui.components.statement_table import render_bundle
 
 st.title("📊 Entity Statements")
@@ -29,11 +30,14 @@ entity = entity_by_label[elabel]
 period = period_by_label[plabel]
 
 try:
-    report = build_entity_report(conn, entity.entity_id, period.year, period.month)
+    report = cache.build_entity_report(
+        entity.entity_id, period.year, period.month, cache.data_version()
+    )
 except ReportingError as exc:
     st.error(str(exc))
     st.stop()
 
 st.caption(f"{report.entity.name} — {report.period_label} — {report.entity.local_currency}")
 render_check_summary(report.checks)
+render_blocking_banner(report.checks)
 render_bundle(report.bundle)

@@ -116,7 +116,7 @@ def collect_all_checks(conn: sqlite3.Connection, year: int, month: int) -> pd.Da
         return pd.DataFrame(columns=["scope", "check", "severity", "passed", "detail"])
 
     for entity in entity_repo.list_all(conn, active_only=True):
-        if tb_repo.load(conn, entity.entity_id, period.period_id).empty:
+        if not tb_repo.has_tb(conn, entity.entity_id, period.period_id):
             continue
         report = build_entity_report(conn, entity.entity_id, year, month)
         _extend(rows, entity.code, report.checks)
